@@ -7,9 +7,10 @@ import sys
 from io import StringIO
 import time
 import prophet
-import os
-import signal
+import os 
+import imblearn
 from dotenv import load_dotenv
+
 load_dotenv()
 genai.configure(api_key=os.getenv("api_key"))
 model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
@@ -19,50 +20,55 @@ InteractiveShell.ast_node_interactivity = "all"
 
 df = pd.read_csv("dataset.csv")
 
-system1 = """
-Assume you are an expert ML practitioner guiding someone through training a high-performance machine learning model. Provide clear instructions.
+dataset = "dataset.csv"
+algortihm = ""
+user_prompt = """
 
-*Dataset is 'dataset.csv'*
+The data provided by the company states that the company uses a pricing model that only takes the expected ride duration as a factor to determine the price for a ride. Now, we will implement a dynamic pricing strategy aiming to adjust the ride costs dynamically based on the demand and supply levels observed in the data. It will capture high-demand periods and low-supply scenarios to increase prices, while low-demand periods and high-supply situations will lead to price reductions.
+"""
 
-- Deliver one instruction at a time that accomplishes a meaningful step.
+
+system1 = f"""
+Assume you are guiding someone through the process of training a machine learning model. Provide step-by-step instructions for each phase of the journey.
+
+*Dataset is '{dataset}'*
+"""+"""
+- If algorithm is provided, then use that algorithm directly.
+- Deliver one instruction at a time in separate prompts.
 - Avoid providing Python code; focus on providing clear, actionable directions.
-- Maintain context awareness - reference previous steps and variables that have been created.
-- If there are any previous results or code executions, incorporate them into planning the next step.
-- Start with essential libraries and gradually build complexity.
-- Don't do visualization, instead create concise tables with key statistics.
-- If the prompt contains an error, diagnose the issue and suggest specific fixes.
-- If Error Occurs, address the specific error rather than simplifying too much.
+- If there are any previous results or code executions, incorporate those into the instructions where relevant.
+- Start by importing libraries, loading the dataset, and performing initial data exploration.
+- Dont do visualization, instead of that create a tables.
+- If the prompt contains an error, summarize the problem and instruct how to fix it.
+- If Error Occurs, then repeat the last prompt in a simpler way.
 - If Error Occurs in last 5 prompts, then reply 'Q2xlYXIgbXkgbWVtb3J5', so that i can start over.
-- Break complex ML processes into clear logical steps (preprocessing, feature engineering, model training, evaluation).
-- At the end, calculate accuracy and give a json {'algorithm':'alg_name', 'accuracy':'accuracy_percentage'}
-- Print only small samples of data (df.head(5)) and concise summaries.
-- After choosing Model, export the dataframe to 'latest_dataset.csv'.
-- Don't use Notebook magic commands (e.g., %matplotlib inline).
-- Don't use Notebook only functions (e.g., display()).
+- At the end, take accuracy and give a json {'algorithm':'alg_name', 'accuracy':'accuracy_percentage'}
+- Avoid Printing big Dataframes and lists or big results. instead print that details of head or tail.
+- After choosing Model, export the last dataframe to a csv file 'latest_dataset.csv', Give the entire remaining code in the next prompt.
+- Dont use Notebook magic commands (e.g., %matplotlib inline).
+- Dont use Notebook only functions (e.g., display()).
+Remember: While instructing, dont tell to assume anything, instead give the exact instruction after studying resutls, or else ask if you need anything else.
+Remember: dont give column names while instructing, instead give the column index number.
 """
 
 system2 = """
-You are an ML Engineer implementing a complete analysis. Your task is to write proper, executable code segments.
+Imagine you are an ML Engineer working in a Python notebook. Your task is to analyze the data step-by-step.
 
-IMPORTANT GUIDELINES:
-- Each code snippet should be 5-15 lines - complete enough to accomplish one logical step
-- Maintain state and memory of previous variables and operations
-- When referencing variables, ONLY use variables that were previously defined
-- Include basic error handling for common issues
-- Focus on one clear task per code segment (e.g., data loading, cleaning, feature creation)
-- Balance between brevity and completeness - each snippet should do something meaningful
-- Always check if required variables exist before using them
-- Print small data samples only (first 5 rows, not entire dataframes)
-- Include brief inline comments only for critical operations
-- Don't use visualization code
-- Each code segment should be completely executable on its own
-- Reference previous results when building upon them
-- Don't use Notebook magic commands or display() functions
-- Always ensure variable consistency between code segments
+Please provide each piece of Python code sequentially, focusing on a single cell of analysis per response. 
+- Each response should be a complete, executable cell and should not include long code spans or multiple cells of code.
+
+Remember: Dont ask wwhy, Do it blindly, I will tell you why and whats the output sequentially, Give me code i want and shut.
+
+- Dont do visualization, instead of that create a tables.
+- Dont use Notebook magic commands (e.g., %matplotlib inline).
+- Dont use Notebook only functions (e.g., display()).
+- Dont make any Syntax errors.
 """
 
 
-def execute_code(code_string, timeout=30):
+import signal
+
+def execute_code(code_string, timeout=60):
     def handler(signum, frame):
         raise TimeoutError("Code execution timed out")
     
@@ -93,25 +99,16 @@ def execute_code(code_string, timeout=30):
         return f"Error Executing: {str(e)}"
 
 with open("chathistory.txt", "w") as chathistory:
-    initial_prompt = """Follow the steps below to perform the analysis and build the prediction model.
+    initial_prompt = f"""Follow the steps below to perform the analysis and build the prediction model.
 
+    {"" if algortihm== "" else f'use {algortihm} algorithm to predict the monthly trends of the retail shop.'} 
+    
     Step 1: Data Preprocessing and Exploration
     Inspect the dataset and check for any missing values or data inconsistencies.
     Perform data reduction, removing irrelevant features if necessary.
     Identify potential patterns in the data that could be used to predict the monthly trends of the retail shop.
 
-    Step 2: Model Training
-    Train a machine learning model (such as a time series model or regression model) on the transaction data to predict monthly trends.
-    Choose an appropriate model based on the data characteristics and goals.
-
-    Step 3: Model Evaluation
-    Evaluate the trained model by comparing the actual transaction data and the predicted values.
-    Visualize both the actual and predicted data in a clear, easily interpretable manner (e.g., using a line chart or bar graph).
-
-    Step 4: Prediction of Monthly Trends
-    Use the trained model to predict future monthly trends for the retail shop.
-    Provide insights on the predicted trends and their potential impact on business strategies.
-    Ensure to follow each step in a logical sequence and provide Python code for each phase.
+    {user_prompt}
 
     Last Step: Get Accuracy
 
